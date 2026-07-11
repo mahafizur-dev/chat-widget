@@ -1,5 +1,5 @@
 // =============================================
-// Chat Widget - Production Ready
+// Production Ready Chat Widget
 // File: chat-widget.js
 // =============================================
 
@@ -11,7 +11,7 @@
       this.config = {
         primaryColor: "#10b981",
         companyName: "My Support",
-        welcomeMessage: "Hello! How can I help you today?",
+        welcomeMessage: "Hello! How can I help you today? 👋",
         placeholder: "Type your message...",
         ...userConfig,
       };
@@ -21,42 +21,84 @@
 
     init() {
       const container = document.createElement("div");
-      container.style.cssText =
-        "position:fixed; bottom:20px; right:20px; z-index:2147483647;";
+      container.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                z-index: 2147483647;
+            `;
 
       this.shadow = container.attachShadow({ mode: "open" });
 
       this.shadow.innerHTML = `
                 <style>
-                    :host { --primary: ${this.config.primaryColor}; }
+                    :host {
+                        --primary: ${this.config.primaryColor};
+                    }
                     .cw-btn {
-                        width: 65px; height: 65px; background: var(--primary);
-                        color: white; border-radius: 50%; font-size: 28px;
-                        display: flex; align-items: center; justify-content: center;
+                        width: 65px;
+                        height: 65px;
+                        background: var(--primary);
+                        color: white;
+                        border-radius: 50%;
+                        font-size: 28px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
                         box-shadow: 0 10px 30px -8px var(--primary);
-                        cursor: pointer; border: none;
+                        cursor: pointer;
+                        border: none;
                     }
                     .cw-window {
-                        position: fixed; bottom: 95px; right: 20px;
-                        width: 380px; height: 560px; background: white;
-                        border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.25);
-                        display: none; flex-direction: column; overflow: hidden;
+                        position: fixed;
+                        bottom: 95px;
+                        right: 20px;
+                        width: 380px;
+                        height: 560px;
+                        background: white;
+                        border-radius: 20px;
+                        box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+                        display: none;
+                        flex-direction: column;
+                        overflow: hidden;
                     }
-                    .cw-window.open { display: flex; }
+                    .cw-window.open {
+                        display: flex;
+                    }
                     .cw-header {
-                        background: var(--primary); color: white; padding: 16px;
-                        display: flex; align-items: center; gap: 12px;
+                        background: var(--primary);
+                        color: white;
+                        padding: 16px;
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
                     }
                     .cw-messages {
-                        flex: 1; padding: 20px; overflow-y: auto; background: #f8fafc;
+                        flex: 1;
+                        padding: 20px;
+                        overflow-y: auto;
+                        background: #f8fafc;
                     }
                     .cw-message {
-                        margin: 8px 0; padding: 12px 16px; border-radius: 18px;
+                        margin: 8px 0;
+                        padding: 12px 16px;
+                        border-radius: 18px;
                         max-width: 80%;
                     }
-                    .cw-message.bot { background: white; align-self: flex-start; }
-                    .cw-message.user { background: var(--primary); color: white; align-self: flex-end; }
-                    .cw-input-area { padding: 16px; background: white; border-top: 1px solid #eee; }
+                    .cw-message.bot {
+                        background: white;
+                        align-self: flex-start;
+                    }
+                    .cw-message.user {
+                        background: var(--primary);
+                        color: white;
+                        align-self: flex-end;
+                    }
+                    .cw-input-area {
+                        padding: 16px;
+                        background: white;
+                        border-top: 1px solid #eee;
+                    }
                 </style>
 
                 <button class="cw-btn" id="cw-btn">💬</button>
@@ -68,8 +110,12 @@
                     </div>
                     <div class="cw-messages" id="cw-messages"></div>
                     <div class="cw-input-area">
-                        <textarea id="cw-input" placeholder="${this.config.placeholder}" style="width:100%; height:50px; padding:12px; border-radius:12px; border:1px solid #ddd; resize:none;"></textarea>
-                        <button id="cw-send" style="margin-top:8px; padding:10px 20px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer;">Send</button>
+                        <textarea id="cw-input" placeholder="${this.config.placeholder}" 
+                            style="width:100%; height:52px; padding:12px; border-radius:12px; border:1px solid #ddd; resize:none;"></textarea>
+                        <button id="cw-send" 
+                            style="margin-top:8px; padding:10px 24px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer;">
+                            Send
+                        </button>
                     </div>
                 </div>
             `;
@@ -80,17 +126,17 @@
 
     bindEvents() {
       const btn = this.shadow.getElementById("cw-btn");
-      const windowEl = this.shadow.getElementById("cw-window");
-      const closeBtn = this.shadow.getElementById("cw-close");
-      const sendBtn = this.shadow.getElementById("cw-send");
+      const win = this.shadow.getElementById("cw-window");
+      const close = this.shadow.getElementById("cw-close");
+      const send = this.shadow.getElementById("cw-send");
       const input = this.shadow.getElementById("cw-input");
 
       btn.addEventListener("click", () => this.toggle());
-      closeBtn.addEventListener("click", () => this.close());
+      close.addEventListener("click", () => this.close());
 
-      sendBtn.addEventListener("click", () => this.send());
+      send.addEventListener("click", () => this.sendMessage());
       input.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") this.send();
+        if (e.key === "Enter") this.sendMessage();
       });
     }
 
@@ -105,7 +151,7 @@
       this.shadow.getElementById("cw-window").classList.remove("open");
     }
 
-    send() {
+    sendMessage() {
       const input = this.shadow.getElementById("cw-input");
       const text = input.value.trim();
       if (!text) return;
@@ -113,13 +159,10 @@
       this.addMessage(text, "user");
       input.value = "";
 
-      // Demo reply
+      // Demo Auto Reply
       setTimeout(() => {
-        this.addMessage(
-          "Thank you! This is a demo from your hosted widget.",
-          "bot",
-        );
-      }, 800);
+        this.addMessage("Thank you! This widget is hosted online.", "bot");
+      }, 700);
     }
 
     addMessage(text, type) {
@@ -132,9 +175,9 @@
     }
   }
 
-  // Make it available globally
+  // Expose to window
   window.ChatWidget = ChatWidget;
 
-  // Auto start
+  // Auto initialize
   new ChatWidget();
 })();
