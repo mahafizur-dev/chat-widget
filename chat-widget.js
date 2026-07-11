@@ -38,16 +38,23 @@
                     .cw-btn {
                         width: 65px;
                         height: 65px;
-                        background: var(--primary);
+                        background: #000;
                         color: white;
                         border-radius: 50%;
-                        font-size: 28px;
+                        font-size: 34px;
+                        font-weight: 700;
+                        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+                        line-height: 1;
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        box-shadow: 0 10px 30px -8px var(--primary);
+                        box-shadow: 0 10px 30px -8px rgba(0,0,0,0.6);
                         cursor: pointer;
                         border: none;
+                    }
+                    .cw-btn-label {
+                        display: block;
+                        transform: translateY(-0.12em);
                     }
                     .cw-window {
                         position: fixed;
@@ -101,7 +108,7 @@
                     }
                 </style>
 
-                <button class="cw-btn" id="cw-btn">💬</button>
+                <button class="cw-btn" id="cw-btn" aria-label="Open presswayy chat"><span class="cw-btn-label">p</span></button>
 
                 <div class="cw-window" id="cw-window">
                     <div class="cw-header">
@@ -110,9 +117,9 @@
                     </div>
                     <div class="cw-messages" id="cw-messages"></div>
                     <div class="cw-input-area">
-                        <textarea id="cw-input" placeholder="${this.config.placeholder}" 
+                        <textarea id="cw-input" placeholder="${this.config.placeholder}"
                             style="width:100%; height:52px; padding:12px; border-radius:12px; border:1px solid #ddd; resize:none;"></textarea>
-                        <button id="cw-send" 
+                        <button id="cw-send"
                             style="margin-top:8px; padding:10px 24px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer;">
                             Send
                         </button>
