@@ -16,7 +16,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const allowed = ($env.ALLOWED_CHATBOT_ORIGINS || '')\n  .split(',')\n  .map((s) => s.trim())\n  .filter(Boolean);\n\nconst headers = $json.headers || {};\nconst origin = headers.origin || headers.referer || '';\nconst originAllowed =\n  allowed.length > 0 &&\n  allowed.some((a) => origin === a || origin.indexOf(a + '/') === 0);\n\nreturn [{ json: { ...$json, origin, originAllowed } }];"
+        "jsCode": "// Not secret - a public domain allowlist, safe to hardcode here.\n// EDIT ME: add every real domain this widget is embedded on.\nconst allowed = [\n  'https://presswayy.com',\n  'https://www.presswayy.com',\n];\n\nconst headers = $json.headers || {};\nconst origin = headers.origin || headers.referer || '';\nconst originAllowed =\n  allowed.length > 0 &&\n  allowed.some((a) => origin === a || origin.indexOf(a + '/') === 0);\n\nreturn [{ json: { ...$json, origin, originAllowed } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -70,7 +70,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body || {};\nconst companyId = body.companyId;\nconst sessionId = body.sessionId;\n\nif (!companyId || !sessionId) {\n  return [{ json: { inputValid: false, error: 'companyId and sessionId are required' } }];\n}\n\n// Must match the channel name the widget subscribes to (chat-widget.js).\nconst channel = `chat-${companyId}-${sessionId}`;\n// Least privilege: the browser only ever subscribes, so the minted token\n// never carries publish/presence/history capability.\nconst capability = JSON.stringify({ [channel]: ['subscribe'] });\n\nconst rootKey = $env.ABLY_ROOT_KEY || '';\nconst keyName = rootKey.split(':')[0];\nconst authHeader = 'Basic ' + Buffer.from(rootKey).toString('base64');\n\nreturn [{\n  json: { inputValid: true, channel, capability, clientId: sessionId, keyName, authHeader },\n}];"
+        "jsCode": "const body = $json.body || {};\nconst companyId = body.companyId;\nconst sessionId = body.sessionId;\n\nif (!companyId || !sessionId) {\n  return [{ json: { inputValid: false, error: 'companyId and sessionId are required' } }];\n}\n\n// Must match the channel name the widget subscribes to (chat-widget.js).\nconst channel = `chat-${companyId}-${sessionId}`;\n// Least privilege: the browser only ever subscribes, so the minted token\n// never carries publish/presence/history capability.\nconst capability = JSON.stringify({ [channel]: ['subscribe'] });\n\n// keyName (appId.keyId) is the public half of the Ably key - not a secret.\n// EDIT ME: paste the part of your Ably root key BEFORE the colon.\n// The secret half (after the colon) lives only in the \"Ably Root Key\"\n// HTTP Basic Auth credential attached to the Request Ably Token node below.\nconst keyName = 'REPLACE_WITH_YOUR_ABLY_KEY_NAME';\n\nreturn [{\n  json: { inputValid: true, channel, capability, clientId: sessionId, keyName },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -126,13 +126,11 @@
       "parameters": {
         "method": "POST",
         "url": "={{ 'https://rest.ably.io/keys/' + $json.keyName + '/requestToken' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ $json.authHeader }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
