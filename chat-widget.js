@@ -9,12 +9,12 @@
       "https://server.presswayy.com/webhook/api/v1/upload-image-chatbot",
     IMAGE_STATUS:
       "https://server.presswayy.com/webhook/api/v1/get-image-status-chatbot",
+    ABLY_TOKEN:
+      "https://server.presswayy.com/webhook/api/v1/ably-token-chatbot",
   };
 
   const SESSION_KEY = "presswayy_chat_session_id";
   const COMPANY_ID = "f1767d60-ac8c-485a-b89a-ab739cf48f5f";
-
-  const ABLY_KEY = "R8yA4A.KjqdlQ:LcH7Opp_iBEyDAYrgr4A6itRezKMVH_K8KuDHBDIUJU";
 
   const IMG_ACCEPT =
     "image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif";
@@ -23,7 +23,25 @@
   const MOBILE_QUERY = "(max-width: 640px)";
 
   function randToken(len = 9) {
-    return Math.random().toString(36).substr(2, len);
+    const bytes = new Uint8Array(len);
+    if (window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < len; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    return Array.from(bytes, (b) => (b % 36).toString(36)).join("");
+  }
+
+  const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  function escapeHtml(str) {
+    return String(str == null ? "" : str).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+  }
+
+  const SAFE_COLOR = /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]+|rgba?\(\s*[\d.]+%?\s*,\s*[\d.]+%?\s*,\s*[\d.]+%?\s*(,\s*[\d.]+\s*)?\))$/;
+  function sanitizeColor(value, fallback) {
+    return typeof value === "string" && SAFE_COLOR.test(value.trim())
+      ? value.trim()
+      : fallback;
   }
 
   class ChatWidget {
@@ -34,10 +52,9 @@
         welcomeMessage: "Hello! How can I help you today?",
         placeholder: "Type your message...",
         companyId: COMPANY_ID,
-
-        ablyKey: ABLY_KEY,
         ...userConfig,
       };
+      this.config.primaryColor = sanitizeColor(this.config.primaryColor, "#378ADD");
 
       this.sessionId = this.loadSessionId();
       this.isOpen = false;
@@ -58,7 +75,7 @@
         id = localStorage.getItem(SESSION_KEY);
       } catch (e) {}
       if (!id) {
-        id = "sess_" + Date.now().toString(36) + randToken(5);
+        id = "sess_" + Date.now().toString(36) + randToken(16);
         try {
           localStorage.setItem(SESSION_KEY, id);
         } catch (e) {}
@@ -314,7 +331,7 @@
           <div class="cw-notch"></div>
           <div class="cw-screen">
             <div class="cw-header">
-              <strong>${this.config.companyName}</strong>
+              <strong>${escapeHtml(this.config.companyName)}</strong>
               <button class="cw-close-btn" id="cw-close" aria-label="Close">×</button>
             </div>
             <div class="cw-messages" id="cw-messages"></div>
@@ -326,7 +343,7 @@
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
                   </svg>
                 </button>
-                <textarea id="cw-input" class="cw-input-field" placeholder="${this.config.placeholder}" rows="1"></textarea>
+                <textarea id="cw-input" class="cw-input-field" placeholder="${escapeHtml(this.config.placeholder)}" rows="1"></textarea>
                 <button class="cw-send-btn" id="cw-send" aria-label="Send message">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -455,10 +472,12 @@
     }
 
     async setupRealtime() {
-      if (!this.config.ablyKey) return;
       try {
         await this.loadAblyScript();
-        const client = new window.Ably.Realtime({ key: this.config.ablyKey });
+        const client = new window.Ably.Realtime({
+          authCallback: (tokenParams, callback) =>
+            this.ablyAuthCallback(callback),
+        });
         const channel = client.channels.get(
           `chat-${this.config.companyId}-${this.sessionId}`,
         );
@@ -473,12 +492,38 @@
       }
     }
 
+    // Ably calls this whenever it needs a (re)new(ed) token. The token is
+    // minted server-side, scoped to subscribe-only on this exact session's
+    // channel - the browser never holds a key with publish/account-wide
+    // capability.
+    async ablyAuthCallback(callback) {
+      try {
+        const res = await fetch(API.ABLY_TOKEN, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            companyId: this.config.companyId,
+            sessionId: this.sessionId,
+          }),
+        });
+        if (!res.ok) throw new Error("Token auth failed " + res.status);
+        callback(null, await res.json());
+      } catch (err) {
+        callback(err, null);
+      }
+    }
+
     loadAblyScript() {
       if (window.Ably) return Promise.resolve();
       if (this._ablyScriptPromise) return this._ablyScriptPromise;
       this._ablyScriptPromise = new Promise((resolve, reject) => {
         const script = document.createElement("script");
-        script.src = "https://cdn.ably.io/lib/ably.min-2.js";
+        // Pinned to an exact release (not the mutable "-2" major-version
+        // alias) so the SRI hash below stays valid across Ably CDN updates.
+        script.src = "https://cdn.ably.com/lib/ably.min-2.24.0.js";
+        script.integrity =
+          "sha384-4LYoUOkRhHCnlsoivLT2egmUsq+JXhDqdMSLTR2Y14PD8RK+kOvEWoWkBga0I2x7";
+        script.crossOrigin = "anonymous";
         script.onload = () => resolve();
         script.onerror = () => reject(new Error("Failed to load Ably SDK"));
         document.head.appendChild(script);
