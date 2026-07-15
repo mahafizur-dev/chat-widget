@@ -14,7 +14,14 @@
   };
 
   const SESSION_KEY = "presswayy_chat_session_id";
+  const THEME_KEY = "presswayy_chat_theme";
   const COMPANY_ID = "f1767d60-ac8c-485a-b89a-ab739cf48f5f";
+
+  // Static, trusted SVG markup (no user data interpolated) - safe to set via innerHTML.
+  const BOT_AVATAR_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"></rect><circle cx="9" cy="14" r="1.2" fill="currentColor" stroke="none"></circle><circle cx="15" cy="14" r="1.2" fill="currentColor" stroke="none"></circle><path d="M12 8V5"></path><circle cx="12" cy="3.3" r="1.3" fill="currentColor" stroke="none"></circle><path d="M2 13h2M20 13h2"></path></svg>';
+  const USER_AVATAR_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"></path></svg>';
 
   const IMG_ACCEPT =
     "image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif";
@@ -44,19 +51,73 @@
       : fallback;
   }
 
+  // Reads the embedding page's own branding so the widget can default to
+  // "look like this site" instead of a fixed name/icon.
+  function detectHostSiteInfo() {
+    let name = "";
+    try {
+      const ogSite = document.querySelector('meta[property="og:site_name"]');
+      if (ogSite && ogSite.content) name = ogSite.content.trim();
+    } catch (e) {}
+    if (!name) {
+      try {
+        name = (document.title || "").trim();
+      } catch (e) {}
+    }
+    if (!name) {
+      try {
+        name = window.location.hostname;
+      } catch (e) {}
+    }
+
+    let favicon = "";
+    try {
+      const iconLink =
+        document.querySelector('link[rel="icon"]') ||
+        document.querySelector('link[rel="shortcut icon"]') ||
+        document.querySelector('link[rel="apple-touch-icon"]');
+      // .href (not getAttribute) resolves relative paths to an absolute URL.
+      if (iconLink && iconLink.href) favicon = iconLink.href;
+    } catch (e) {}
+    if (!favicon) {
+      try {
+        favicon = window.location.origin + "/favicon.ico";
+      } catch (e) {}
+    }
+
+    return { name, favicon };
+  }
+
+  function formatTimestamp(ms) {
+    const d = new Date(ms);
+    const datePart = d.toLocaleDateString(undefined, {
+      month: "numeric",
+      day: "numeric",
+      year: "2-digit",
+    });
+    const timePart = d.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    return `${datePart}, ${timePart}`;
+  }
+
   class ChatWidget {
     constructor(userConfig = {}) {
+      const hostInfo = detectHostSiteInfo();
       this.config = {
         primaryColor: "#378ADD",
-        companyName: "Presswayy",
+        companyName: hostInfo.name || "Presswayy",
+        faviconUrl: hostInfo.favicon || "",
         welcomeMessage: "Hello! How can I help you today?",
-        placeholder: "Type your message...",
+        placeholder: "Message...",
         companyId: COMPANY_ID,
         ...userConfig,
       };
       this.config.primaryColor = sanitizeColor(this.config.primaryColor, "#378ADD");
 
       this.sessionId = this.loadSessionId();
+      this.theme = this.loadTheme();
       this.isOpen = false;
       this.isSending = false;
       this.hasLoadedHistory = false;
@@ -83,6 +144,22 @@
       return id;
     }
 
+    loadTheme() {
+      try {
+        const saved = localStorage.getItem(THEME_KEY);
+        if (saved === "light" || saved === "dark") return saved;
+      } catch (e) {}
+      try {
+        if (
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: light)").matches
+        ) {
+          return "light";
+        }
+      } catch (e) {}
+      return "dark";
+    }
+
     generateMid() {
       return (
         this.sessionId + "_" + Date.now().toString(36) + "_" + randToken(5)
@@ -93,24 +170,50 @@
       const container = document.createElement("div");
       container.style.cssText =
         "position:fixed; bottom:20px; right:20px; z-index:2147483647;";
+      if (this.theme === "light") container.classList.add("cw-theme-light");
+      this.container = container;
 
       this.shadow = container.attachShadow({ mode: "open" });
 
       this.shadow.innerHTML = `
         <style>
-          :host { --primary: ${this.config.primaryColor}; }
-          
+          :host {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --primary: ${this.config.primaryColor};
+            --msg-bg: #18191a;
+            --msg-panel: #242526;
+            --msg-border: #3a3b3c;
+            --msg-bubble-bot: #3a3b3c;
+            --msg-bubble-user: var(--primary);
+            --msg-text: #e4e6eb;
+            --msg-sub: #8a8d91;
+            --msg-icon-hover: rgba(255,255,255,0.08);
+            --msg-avatar-user: #6b7280;
+            --msg-focus-ring: var(--primary);
+          }
+          :host(.cw-theme-light) {
+            --msg-bg: #ffffff;
+            --msg-panel: #ffffff;
+            --msg-border: #e5e7eb;
+            --msg-bubble-bot: #f0f2f5;
+            --msg-bubble-user: var(--primary);
+            --msg-text: #1c1e21;
+            --msg-sub: #65676b;
+            --msg-icon-hover: rgba(0,0,0,0.06);
+            --msg-avatar-user: #9ca3af;
+          }
+
           .cw-btn {
-            width: 65px; 
-            height: 65px; 
-            background: #000; 
+            width: 65px;
+            height: 65px;
+            background: var(--primary);
             color: white;
-            border-radius: 50%; 
-            display: flex; 
+            border-radius: 50%;
+            display: flex;
             align-items: center;
-            justify-content: center; 
+            justify-content: center;
             box-shadow: 0 10px 30px -8px rgba(0,0,0,0.5);
-            cursor: pointer; 
+            cursor: pointer;
             border: none;
             transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
           }
@@ -132,41 +235,84 @@
             transform: rotate(-8deg) scale(1.05);
           }
           
-          /* Outer bezel — makes the popup look like an iPhone device frame. */
+          /* Messenger/IG-DM-style floating card — dark surface, no device bezel. */
           .cw-window {
-            position:fixed; bottom:95px; right:80px; width:340px; height:min(680px, 80vh);
-            background:#000; border-radius:42px; padding:8px; box-sizing:border-box;
-            box-shadow:0 20px 60px rgba(0,0,0,0.35);
+            position:fixed; bottom:95px; right:24px; width:360px; height:min(600px, 80vh);
+            background:var(--msg-panel); border-radius:20px; box-sizing:border-box;
+            box-shadow:0 12px 40px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2);
             display:flex; align-items:stretch; justify-content:stretch;
+            overflow:hidden;
             pointer-events:none;
-            
-            opacity:0; 
+
+            opacity:0;
             transform: translateY(80px) scale(0.95);
             transform-origin: bottom right;
-            transition: opacity 0.6s ease, transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: opacity 0.4s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), width 0.25s ease, height 0.25s ease;
           }
           .cw-window.open {
-            opacity:1; 
-            transform: translateY(0) scale(1); 
+            opacity:1;
+            transform: translateY(0) scale(1);
             pointer-events:auto;
           }
-          
-          .cw-notch {
-            position:absolute; top:14px; left:50%; transform:translateX(-50%);
-            width:90px; height:24px; background:#000; border-radius:14px; z-index:2;
+          .cw-window.expanded {
+            width: 440px; height: min(760px, 88vh);
           }
-          /* Inner screen — the actual chat UI, clipped to the phone's rounded display. */
+
           .cw-screen {
-            flex:1; width:100%; background:white; border-radius:38px; overflow:hidden;
+            flex:1; width:100%; background:var(--msg-bg);
             display:flex; flex-direction:column; position:relative;
           }
-          .cw-header { background:transparent; color:#1a1a1a; padding:16px; padding-top:34px; display:flex; align-items:center; gap:12px; border-bottom:1px solid #eee; }
-          .cw-close-btn { margin-left:auto; background:none; border:none; color:#000; font-size:28px; cursor:pointer; }
-          .cw-messages { flex:1; padding:20px; overflow-y:auto; background:#f8fafc; display:flex; flex-direction:column; }
-          .cw-message { margin:4px 0; padding:8px 12px; max-width:80%; word-break:break-word; font-size:14px; line-height:1.35; }
-          .cw-message.bot { background:white; border:1px solid #e5e9ed; align-self:flex-start; border-radius:16px 16px 16px 4px; }
-          .cw-message.user { background:transparent; border:1px solid var(--primary); color:#0c447c; align-self:flex-end; border-radius:16px 16px 4px 16px; }
-          
+          .cw-header { background:var(--msg-panel); color:var(--msg-text); padding:14px 16px; padding-top:34px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--msg-border); }
+          .cw-avatar {
+            order:1; width:36px; height:36px; border-radius:50%; flex:0 0 auto;
+            background:var(--primary); color:#fff;
+            display:flex; align-items:center; justify-content:center;
+          }
+          .cw-avatar svg, .cw-avatar img { width:20px; height:20px; }
+          .cw-avatar img { object-fit:contain; border-radius:50%; }
+          .cw-avatar:has(img) { background:transparent; }
+          .cw-header-text { order:2; display:flex; flex-direction:column; line-height:1.25; overflow:hidden; }
+          .cw-header-text strong { font-size:14px; font-weight:600; color:var(--msg-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .cw-status { font-size:12px; color:var(--msg-sub); }
+          .cw-theme-btn, .cw-expand-btn, .cw-close-btn {
+            background:none; border:none; color:var(--msg-text); cursor:pointer;
+            display:flex; align-items:center; justify-content:center;
+            width:32px; height:32px; border-radius:50%; flex:0 0 auto;
+            transition: background-color 0.15s;
+          }
+          .cw-theme-btn:hover, .cw-expand-btn:hover, .cw-close-btn:hover { background-color: var(--msg-icon-hover); }
+          .cw-theme-btn { order:3; margin-left:auto; }
+          .cw-theme-btn .cw-icon-sun { display:none; }
+          .cw-theme-btn .cw-icon-moon { display:flex; }
+          :host(.cw-theme-light) .cw-theme-btn .cw-icon-sun { display:flex; }
+          :host(.cw-theme-light) .cw-theme-btn .cw-icon-moon { display:none; }
+          .cw-expand-btn { order:4; }
+          .cw-expand-btn svg { transition: transform 0.2s; }
+          .cw-expand-btn.active svg { transform: rotate(180deg); }
+          .cw-close-btn { order:5; font-size:26px; line-height:1; padding:0; }
+          .cw-messages { flex:1; padding:20px; overflow-y:auto; background:var(--msg-bg); display:flex; flex-direction:column; }
+          .cw-time-divider { text-align:center; font-size:11px; color:var(--msg-sub); margin:14px 0 8px; }
+          .cw-msg-row { display:flex; align-items:flex-end; gap:8px; margin:10px 0; }
+          .cw-msg-row.bot { justify-content:flex-start; }
+          .cw-msg-row.user { justify-content:flex-end; }
+          .cw-msg-avatar-slot { width:36px; height:36px; flex:0 0 auto; }
+          .cw-mini-avatar {
+            width:36px; height:36px; border-radius:50%;
+            display:flex; align-items:center; justify-content:center;
+            color:#fff;
+          }
+          .cw-mini-avatar svg, .cw-mini-avatar img { width:24px; height:24px; }
+          .cw-mini-avatar img { object-fit:contain; border-radius:50%; }
+          .cw-mini-avatar.bot { background: var(--primary); }
+          .cw-mini-avatar.bot:has(img) { background:transparent; }
+          .cw-mini-avatar.user { background: var(--msg-avatar-user); }
+          .cw-message { padding:8px 12px; max-width:80%; word-break:break-word; font-size:14px; line-height:1.35; }
+          .cw-message.bot { background:var(--msg-bubble-bot); border:none; color:var(--msg-text); align-self:flex-start; border-radius:18px; }
+          .cw-message.user { background:var(--msg-bubble-user); border:none; color:#fff; align-self:flex-end; border-radius:18px; }
+          /* Image-only messages float without a colored bubble behind them. */
+          .cw-message.cw-message--media { background:transparent; padding:0; }
+          .cw-message--media .cw-image-grid { margin-top:0; }
+
           /* Clickable Chat Images */
           .cw-message img { 
             max-width:200px; max-height:200px; border-radius:10px; margin-top:6px; display:block; 
@@ -189,7 +335,7 @@
           }
           .cw-typing-bubble { display:flex; align-items:center; gap:4px; padding:12px 14px; }
           .cw-dot {
-            width:6px; height:6px; border-radius:50%; background:#9aa0a6;
+            width:6px; height:6px; border-radius:50%; background:var(--msg-sub);
             animation: cw-bounce 1.2s infinite ease-in-out;
           }
           .cw-dot:nth-child(2) { animation-delay: 0.15s; }
@@ -199,10 +345,10 @@
             30% { transform:translateY(-4px); opacity:1; }
           }
           
-          .cw-input-area { 
-            padding: 12px 16px; 
-            background: white; 
-            border-top: 1px solid #f1f5f9; 
+          .cw-input-area {
+            padding: 10px 12px;
+            background: var(--msg-panel);
+            border-top: 1px solid var(--msg-border);
           }
           .cw-pending-images { display:none; gap:8px; flex-wrap:wrap; padding-bottom:10px; }
           .cw-pending-thumb { position:relative; width:56px; height:56px; }
@@ -212,59 +358,47 @@
             background:#333; color:white; border:none; font-size:14px; line-height:1; cursor:pointer;
             display:flex; align-items:center; justify-content:center; padding:0;
           }
-          
-          .cw-input-row { 
-            display: flex; 
-            gap: 10px; 
-            align-items: flex-end;
+
+          .cw-input-row {
+            display: flex;
+            gap: 6px;
+            align-items: center;
           }
-          .cw-input-field { 
-            flex: 1; 
-            min-height: 40px; 
-            max-height: 120px; 
-            height: 40px;
-            padding: 10px 14px; 
-            border-radius: 20px; 
-            border: 1px solid #cbd5e1; 
-            background: #f8fafc;
-            resize: none; 
-            font-family: inherit; 
+          .cw-input-field {
+            flex: 1;
+            min-height: 36px;
+            max-height: 120px;
+            height: 36px;
+            padding: 8px 16px;
+            border-radius: 18px;
+            border: 1px solid transparent;
+            background: var(--msg-bubble-bot);
+            color: var(--msg-text);
+            resize: none;
+            font-family: inherit;
             font-size: 14px;
             line-height: 1.4;
             outline: none;
             box-sizing: border-box;
-            transition: border-color 0.2s, background-color 0.2s;
+            transition: box-shadow 0.2s;
             overflow-y: auto;
             scrollbar-width: none;
             -ms-overflow-style: none;
           }
+          .cw-input-field:focus { box-shadow: 0 0 0 2px var(--msg-focus-ring); }
+          .cw-input-field::placeholder { color: var(--msg-sub); }
           .cw-input-field::-webkit-scrollbar { display: none; }
-          
-          .cw-input-field:focus {
-            border-color: var(--primary);
-            background: #ffffff;
-          }
-          .cw-attach-btn {
-            width: 40px; height: 40px; flex: 0 0 auto; background: transparent; color: #64748b;
+
+          .cw-icon-btn {
+            width: 36px; height: 36px; flex: 0 0 auto; background: transparent; color: var(--msg-text);
             border: none; border-radius: 50%; cursor: pointer;
             display: flex; align-items: center; justify-content: center;
             transition: background-color 0.2s, color 0.2s;
           }
-          .cw-attach-btn:hover { background-color: #f1f5f9; color: #1e293b; }
-          
-          .cw-send-btn { 
-            width: 40px; height: 40px; flex: 0 0 auto; background: var(--primary); color: white; 
-            border: none; border-radius: 50%; cursor: pointer; 
-            display: flex; align-items: center; justify-content: center;
-            transition: opacity 0.2s, transform 0.1s;
-          }
-          .cw-send-btn:hover { opacity: 0.95; transform: scale(1.05); }
-          .cw-send-btn:active { transform: scale(0.95); }
-          
-          .cw-home-indicator {
-            display:block; width:120px; height:5px; border-radius:3px;
-            background:rgba(0,0,0,0.25); margin:6px auto 4px;
-          }
+          .cw-icon-btn:hover { background-color: var(--msg-icon-hover); }
+          .cw-send-btn { color: var(--primary); }
+          .cw-send-btn.hidden, .cw-mic-btn.hidden { display: none; }
+          .cw-send-btn:active { transform: scale(0.9); }
 
           /* Lightbox/Zoom Image Styles */
           .cw-lightbox {
@@ -293,58 +427,90 @@
           @media (max-width: 640px) {
             .cw-window {
               position:fixed; inset:0; width:100%; height:100%;
-              padding:0; background:white; border-radius:0; box-shadow:none;
-              opacity:1; 
+              padding:0; background:var(--msg-panel); border-radius:0; box-shadow:none;
+              opacity:1;
               transform: translateY(100%);
               transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
             }
             .cw-window.open {
-              opacity:1; 
+              opacity:1;
               transform: translateY(0);
             }
-            .cw-notch { display:none; }
+            .cw-window.expanded { width:100%; height:100%; }
             .cw-screen { border-radius:0; }
+            .cw-expand-btn { display:none; }
             .cw-window.open .cw-header { padding-top: calc(16px + env(safe-area-inset-top)); }
-            .cw-window.open .cw-close-btn { font-size:0; }
-            .cw-window.open .cw-close-btn::before { content:"‹"; font-size:32px; color:#000; }
+            .cw-window.open .cw-close-btn { order:-1; margin-left:0; font-size:0; }
+            .cw-window.open .cw-close-btn::before { content:"‹"; font-size:30px; color:var(--msg-text); }
             .cw-window.open .cw-input-area {
-              padding-bottom: calc(12px + env(safe-area-inset-bottom)); 
-              border-top: 1px solid #f1f5f9;
-            }
-            .cw-window.open .cw-home-indicator {
-              display:block; width:134px; height:5px; border-radius:3px;
-              background:rgba(0,0,0,0.25); margin:6px auto calc(4px + env(safe-area-inset-bottom));
+              padding-bottom: calc(12px + env(safe-area-inset-bottom));
+              border-top: 1px solid var(--msg-border);
             }
             .cw-lightbox-img { max-width: 95%; max-height: 70vh; }
           }
         </style>
 
         <button class="cw-btn" id="cw-btn">
-          <svg width="38" height="38" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="54" cy="54" r="32" fill="var(--primary, #378ADD)"/>
-            <path d="M 47,16 C 29.88,16 16,29.88 16,47 C 16,54.12 18.42,60.67 22.5,65.88 L 18,78 L 30.63,74.12 C 35.34,76.6 40.75,78 47,78 C 64.12,78 78,64.12 78,47 C 78,29.88 64.12,16 47,16 Z" fill="#ffffff"/>
-            <path d="M 55,34 L 38,51 H 44 L 37,64 L 58,43 H 50 Z" fill="var(--primary, #378ADD)"/>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
           </svg>
         </button>
 
         <div class="cw-window" id="cw-window">
-          <div class="cw-notch"></div>
           <div class="cw-screen">
             <div class="cw-header">
-              <strong>${escapeHtml(this.config.companyName)}</strong>
               <button class="cw-close-btn" id="cw-close" aria-label="Close">×</button>
+              <div class="cw-avatar" id="cw-header-avatar"></div>
+              <div class="cw-header-text">
+                <strong>${escapeHtml(this.config.companyName)}</strong>
+                <span class="cw-status">Reply within one minute</span>
+              </div>
+              <button class="cw-theme-btn" id="cw-theme" aria-label="Switch to light theme" title="Switch theme">
+                <svg class="cw-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <line x1="12" y1="1" x2="12" y2="3"></line>
+                  <line x1="12" y1="21" x2="12" y2="23"></line>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                  <line x1="1" y1="12" x2="3" y2="12"></line>
+                  <line x1="21" y1="12" x2="23" y2="12"></line>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+                <svg class="cw-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+              </button>
+              <button class="cw-expand-btn" id="cw-expand" aria-label="Expand" title="Expand">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <polyline points="9 21 3 21 3 15"></polyline>
+                  <line x1="21" y1="3" x2="14" y2="10"></line>
+                  <line x1="3" y1="21" x2="10" y2="14"></line>
+                </svg>
+              </button>
             </div>
             <div class="cw-messages" id="cw-messages"></div>
             <div class="cw-input-area">
               <div class="cw-pending-images" id="cw-pending"></div>
               <div class="cw-input-row">
-                <button class="cw-attach-btn" id="cw-attach" type="button" title="Send an image">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                <textarea id="cw-input" class="cw-input-field" placeholder="${escapeHtml(this.config.placeholder)}" rows="1"></textarea>
+                <button class="cw-icon-btn cw-mic-btn" id="cw-mic" type="button" tabindex="-1" aria-label="Voice message" title="Voice message">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
                   </svg>
                 </button>
-                <textarea id="cw-input" class="cw-input-field" placeholder="${escapeHtml(this.config.placeholder)}" rows="1"></textarea>
-                <button class="cw-send-btn" id="cw-send" aria-label="Send message">
+                <button class="cw-icon-btn" id="cw-attach" type="button" title="Send an image">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="4"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.75"></circle>
+                    <path d="M21 15l-5-5L5 21"></path>
+                  </svg>
+                </button>
+                <button class="cw-icon-btn cw-send-btn hidden" id="cw-send" aria-label="Send message">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="22" y1="2" x2="11" y2="13"></line>
                     <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -353,7 +519,6 @@
               </div>
               <input type="file" id="cw-file" accept="${IMG_ACCEPT}" multiple style="display:none;">
             </div>
-            <div class="cw-home-indicator"></div>
           </div>
         </div>
 
@@ -365,12 +530,33 @@
       `;
 
       document.body.appendChild(container);
+      this.renderBotAvatarInto(this.shadow.getElementById("cw-header-avatar"));
       this.bindEvents();
+    }
+
+    // Prefers the host site's own favicon; falls back to the generic bot
+    // icon if there is no favicon or it fails to load (e.g. 404).
+    renderBotAvatarInto(el) {
+      if (!el) return;
+      if (this.config.faviconUrl) {
+        const img = document.createElement("img");
+        img.src = this.config.faviconUrl;
+        img.alt = "";
+        img.addEventListener("error", () => {
+          el.innerHTML = BOT_AVATAR_SVG;
+        });
+        el.innerHTML = "";
+        el.appendChild(img);
+      } else {
+        el.innerHTML = BOT_AVATAR_SVG;
+      }
     }
 
     bindEvents() {
       const btn = this.shadow.getElementById("cw-btn");
       const close = this.shadow.getElementById("cw-close");
+      const expand = this.shadow.getElementById("cw-expand");
+      const themeBtn = this.shadow.getElementById("cw-theme");
       const sendBtn = this.shadow.getElementById("cw-send");
       const input = this.shadow.getElementById("cw-input");
       const attachBtn = this.shadow.getElementById("cw-attach");
@@ -380,6 +566,8 @@
 
       btn.addEventListener("click", () => this.toggle());
       close.addEventListener("click", () => this.close());
+      expand.addEventListener("click", () => this.toggleExpand());
+      themeBtn.addEventListener("click", () => this.toggleTheme());
       sendBtn.addEventListener("click", () => this.sendMessage());
 
       // Close lightbox on clicking close button or background backdrop
@@ -391,6 +579,7 @@
       input.addEventListener("input", () => {
         input.style.height = "auto";
         input.style.height = input.scrollHeight + "px";
+        this.updateSendMicVisibility();
       });
 
       input.addEventListener("keydown", (e) => {
@@ -469,6 +658,38 @@
       } else {
         btn.style.display = "flex";
       }
+    }
+
+    toggleExpand() {
+      const win = this.shadow.getElementById("cw-window");
+      const expandBtn = this.shadow.getElementById("cw-expand");
+      const isExpanded = win.classList.toggle("expanded");
+      expandBtn.classList.toggle("active", isExpanded);
+      expandBtn.setAttribute("aria-label", isExpanded ? "Collapse" : "Expand");
+      expandBtn.setAttribute("title", isExpanded ? "Collapse" : "Expand");
+    }
+
+    toggleTheme() {
+      this.theme = this.theme === "light" ? "dark" : "light";
+      this.container.classList.toggle("cw-theme-light", this.theme === "light");
+      try {
+        localStorage.setItem(THEME_KEY, this.theme);
+      } catch (e) {}
+      const themeBtn = this.shadow.getElementById("cw-theme");
+      themeBtn.setAttribute(
+        "aria-label",
+        this.theme === "light" ? "Switch to dark theme" : "Switch to light theme",
+      );
+    }
+
+    updateSendMicVisibility() {
+      const input = this.shadow.getElementById("cw-input");
+      const sendBtn = this.shadow.getElementById("cw-send");
+      const micBtn = this.shadow.getElementById("cw-mic");
+      const hasContent =
+        input.value.trim().length > 0 || this.pendingAttachments.length > 0;
+      sendBtn.classList.toggle("hidden", !hasContent);
+      micBtn.classList.toggle("hidden", hasContent);
     }
 
     async setupRealtime() {
@@ -570,29 +791,74 @@
 
       if (!messages.length) {
         this.appendBubble(
-          { sender: "bot", text: this.config.welcomeMessage },
+          { sender: "bot", text: this.config.welcomeMessage, time: Date.now() },
           container,
+          { showAvatar: true },
         );
         return;
       }
 
-      for (const m of messages) {
-        this.appendBubble(m, container);
-      }
+      const DIVIDER_GAP_MS = 15 * 60 * 1000;
+      messages.forEach((m, i) => {
+        const prev = messages[i - 1];
+        if (i === 0 || (m.time && prev.time && m.time - prev.time > DIVIDER_GAP_MS)) {
+          this.appendTimeDivider(m.time, container);
+        }
+        const next = messages[i + 1];
+        // A cluster ends (and the avatar shows) at a sender change, the end
+        // of the list, or right before the next timestamp divider.
+        const showAvatar =
+          !next ||
+          next.sender !== m.sender ||
+          (next.time && m.time && next.time - m.time > DIVIDER_GAP_MS);
+        this.appendBubble(m, container, { showAvatar });
+      });
       container.scrollTop = container.scrollHeight;
     }
 
-    appendBubble(m, container) {
-      container = container || this.shadow.getElementById("cw-messages");
+    appendTimeDivider(time, container) {
+      if (!time) return;
       const div = document.createElement("div");
-      div.className = "cw-message " + (m.sender === "user" ? "user" : "bot");
+      div.className = "cw-time-divider";
+      div.textContent = formatTimestamp(time);
+      container.appendChild(div);
+    }
+
+    appendBubble(m, container, options = {}) {
+      container = container || this.shadow.getElementById("cw-messages");
+      const isBot = m.sender !== "user";
+      const showAvatar = options.showAvatar !== false;
+
+      const row = document.createElement("div");
+      row.className = "cw-msg-row " + (isBot ? "bot" : "user");
+
+      const slot = document.createElement("div");
+      slot.className = "cw-msg-avatar-slot";
+      if (showAvatar) {
+        const mini = document.createElement("div");
+        mini.className = "cw-mini-avatar " + (isBot ? "bot" : "user");
+        if (isBot) {
+          this.renderBotAvatarInto(mini);
+        } else {
+          mini.innerHTML = USER_AVATAR_SVG;
+        }
+        slot.appendChild(mini);
+      }
+      if (isBot) row.appendChild(slot);
+
+      const hasImages = Array.isArray(m.images) && m.images.length > 0;
+      const isMediaOnly = !m.text && hasImages;
+
+      const div = document.createElement("div");
+      div.className = "cw-message " + (isBot ? "bot" : "user");
+      if (isMediaOnly) div.classList.add("cw-message--media");
 
       if (m.text) {
         const span = document.createElement("span");
         span.textContent = m.text;
         div.appendChild(span);
       }
-      if (Array.isArray(m.images) && m.images.length) {
+      if (hasImages) {
         const grid = document.createElement("div");
         grid.className =
           "cw-image-grid" + (m.images.length === 1 ? " single" : "");
@@ -606,14 +872,27 @@
         }
         div.appendChild(grid);
       }
-      container.appendChild(div);
+      row.appendChild(div);
+      if (!isBot) row.appendChild(slot);
+      container.appendChild(row);
       container.scrollTop = container.scrollHeight;
     }
 
     showTyping(label = "Thinking...") {
       const container = this.shadow.getElementById("cw-messages");
+      const row = document.createElement("div");
+      row.id = "cw-typing";
+      row.className = "cw-msg-row bot";
+
+      const slot = document.createElement("div");
+      slot.className = "cw-msg-avatar-slot";
+      const mini = document.createElement("div");
+      mini.className = "cw-mini-avatar bot";
+      this.renderBotAvatarInto(mini);
+      slot.appendChild(mini);
+      row.appendChild(slot);
+
       const typing = document.createElement("div");
-      typing.id = "cw-typing";
       typing.className = "cw-message bot";
 
       if (label === "Thinking...") {
@@ -627,7 +906,8 @@
         typing.textContent = label;
       }
 
-      container.appendChild(typing);
+      row.appendChild(typing);
+      container.appendChild(row);
       container.scrollTop = container.scrollHeight;
     }
 
@@ -694,7 +974,9 @@
       }
 
       if (!text && images.length === 0) return null;
-      return { sender, text, images };
+
+      const time = row.created_at ? new Date(row.created_at).getTime() : Date.now();
+      return { sender, text, images, time };
     }
 
     buildMessages(rows) {
@@ -822,6 +1104,8 @@
         thumb.appendChild(removeBtn);
         container.appendChild(thumb);
       });
+
+      this.updateSendMicVisibility();
     }
 
     removePendingAttachment(index) {

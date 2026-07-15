@@ -19,7 +19,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const allowed = ($env.ALLOWED_CHATBOT_ORIGINS || '')\n  .split(',')\n  .map((s) => s.trim())\n  .filter(Boolean);\n\nconst headers = $json.headers || {};\nconst origin = headers.origin || headers.referer || '';\nconst originAllowed =\n  allowed.length > 0 &&\n  allowed.some((a) => origin === a || origin.indexOf(a + '/') === 0);\n\nreturn [{ json: { ...$json, origin, originAllowed } }];"
+        "jsCode": "// Not secret - a public domain allowlist, safe to hardcode here.\n// EDIT ME: add every real domain this widget is embedded on.\nconst allowed = [\n  'https://presswayy.com',\n  'https://www.presswayy.com',\n];\n\nconst headers = $json.headers || {};\nconst origin = headers.origin || headers.referer || '';\nconst originAllowed =\n  allowed.length > 0 &&\n  allowed.some((a) => origin === a || origin.indexOf(a + '/') === 0);\n\nreturn [{ json: { ...$json, origin, originAllowed } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -75,13 +75,11 @@
       "parameters": {
         "method": "POST",
         "url": "https://img.presswayy.com/api/upload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "x-api-key",
-              "value": "={{ $env.PRESSWAYY_IMG_API_KEY }}"
-            },
             {
               "name": "x-uploader",
               "value": "ChatWidget"
