@@ -2,7 +2,7 @@
   "use strict";
 
   const API = {
-    GET: "https://server.presswayy.com/webhook/api/v1/get-data-chatbot",
+    GET: "https://server.presswayy.com/webhook/api/v1/get-data-chatbot-widget",
     POST: "https://server.presswayy.com/webhook/api/v1/post-data-chatbot",
 
     UPLOAD_IMAGE:
@@ -15,13 +15,12 @@
 
   const SESSION_KEY = "presswayy_chat_session_id";
   const THEME_KEY = "presswayy_chat_theme";
+  const NAME_KEY = "presswayy_chat_user_name";
   const COMPANY_ID = "f1767d60-ac8c-485a-b89a-ab739cf48f5f";
 
   // Static, trusted SVG markup (no user data interpolated) - safe to set via innerHTML.
   const BOT_AVATAR_SVG =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"></rect><circle cx="9" cy="14" r="1.2" fill="currentColor" stroke="none"></circle><circle cx="15" cy="14" r="1.2" fill="currentColor" stroke="none"></circle><path d="M12 8V5"></path><circle cx="12" cy="3.3" r="1.3" fill="currentColor" stroke="none"></circle><path d="M2 13h2M20 13h2"></path></svg>';
-  const USER_AVATAR_SVG =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"></path></svg>';
 
   const IMG_ACCEPT =
     "image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif";
@@ -109,7 +108,7 @@
         primaryColor: "#378ADD",
         companyName: hostInfo.name || "Presswayy",
         faviconUrl: hostInfo.favicon || "",
-        welcomeMessage: "Hello! How can I help you today?",
+        welcomeMessage: "Hi there! Enter your name to start chatting.",
         placeholder: "Message...",
         companyId: COMPANY_ID,
         ...userConfig,
@@ -117,6 +116,7 @@
       this.config.primaryColor = sanitizeColor(this.config.primaryColor, "#378ADD");
 
       this.sessionId = this.loadSessionId();
+      this.userName = this.loadUserName();
       this.theme = this.loadTheme();
       this.isOpen = false;
       this.isSending = false;
@@ -125,6 +125,7 @@
       // handler has already delivered the reply, so the two paths don't
       // race and double-render the same message.
       this.replyReceivedViaRealtime = false;
+      this.typingTimer = null;
 
       this.pendingAttachments = [];
       this.init();
@@ -142,6 +143,14 @@
         } catch (e) {}
       }
       return id;
+    }
+
+    loadUserName() {
+      try {
+        return localStorage.getItem(NAME_KEY) || null;
+      } catch (e) {
+        return null;
+      }
     }
 
     loadTheme() {
@@ -188,7 +197,6 @@
             --msg-text: #e4e6eb;
             --msg-sub: #8a8d91;
             --msg-icon-hover: rgba(255,255,255,0.08);
-            --msg-avatar-user: #6b7280;
             --msg-focus-ring: var(--primary);
           }
           :host(.cw-theme-light) {
@@ -200,7 +208,6 @@
             --msg-text: #1c1e21;
             --msg-sub: #65676b;
             --msg-icon-hover: rgba(0,0,0,0.06);
-            --msg-avatar-user: #9ca3af;
           }
 
           .cw-btn {
@@ -295,6 +302,14 @@
           .cw-msg-row { display:flex; align-items:flex-end; gap:8px; margin:10px 0; }
           .cw-msg-row.bot { justify-content:flex-start; }
           .cw-msg-row.user { justify-content:flex-end; }
+          .cw-msg-row.cw-bubble-in { animation: cw-bubble-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+          @keyframes cw-bubble-in {
+            from { opacity:0; transform:translateY(8px); }
+            to { opacity:1; transform:translateY(0); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .cw-msg-row.cw-bubble-in { animation:none; }
+          }
           .cw-msg-avatar-slot { width:36px; height:36px; flex:0 0 auto; }
           .cw-mini-avatar {
             width:36px; height:36px; border-radius:50%;
@@ -305,8 +320,11 @@
           .cw-mini-avatar img { object-fit:contain; border-radius:50%; }
           .cw-mini-avatar.bot { background: var(--primary); }
           .cw-mini-avatar.bot:has(img) { background:transparent; }
-          .cw-mini-avatar.user { background: var(--msg-avatar-user); }
-          .cw-message { padding:8px 12px; max-width:80%; word-break:break-word; font-size:14px; line-height:1.35; }
+          .cw-message { padding:8px 12px; max-width:60%; word-break:break-word; font-size:13px; line-height:1.35; }
+          /* The image grid below is a fixed 200px wide - a text bubble's 60%
+             max-width can compute narrower than that on smaller windows, so
+             bubbles carrying an image need enough room to actually fit it. */
+          .cw-message:has(.cw-image-grid) { max-width:232px; }
           .cw-message.bot { background:var(--msg-bubble-bot); border:none; color:var(--msg-text); align-self:flex-start; border-radius:18px; }
           .cw-message.user { background:var(--msg-bubble-user); border:none; color:#fff; align-self:flex-end; border-radius:18px; }
           /* Image-only messages float without a colored bubble behind them. */
@@ -766,11 +784,15 @@
         return;
       }
 
-      this.appendBubble({
-        sender: "bot",
-        text: data.text || "",
-        images: data.images || [],
-      });
+      this.appendBubble(
+        {
+          sender: "bot",
+          text: data.text || "",
+          images: data.images || [],
+        },
+        null,
+        { animate: true },
+      );
     }
 
     close() {
@@ -828,23 +850,23 @@
       container = container || this.shadow.getElementById("cw-messages");
       const isBot = m.sender !== "user";
       const showAvatar = options.showAvatar !== false;
+      const animate = options.animate === true;
 
       const row = document.createElement("div");
-      row.className = "cw-msg-row " + (isBot ? "bot" : "user");
+      row.className =
+        "cw-msg-row " + (isBot ? "bot" : "user") + (animate ? " cw-bubble-in" : "");
 
-      const slot = document.createElement("div");
-      slot.className = "cw-msg-avatar-slot";
-      if (showAvatar) {
-        const mini = document.createElement("div");
-        mini.className = "cw-mini-avatar " + (isBot ? "bot" : "user");
-        if (isBot) {
+      if (isBot) {
+        const slot = document.createElement("div");
+        slot.className = "cw-msg-avatar-slot";
+        if (showAvatar) {
+          const mini = document.createElement("div");
+          mini.className = "cw-mini-avatar bot";
           this.renderBotAvatarInto(mini);
-        } else {
-          mini.innerHTML = USER_AVATAR_SVG;
+          slot.appendChild(mini);
         }
-        slot.appendChild(mini);
+        row.appendChild(slot);
       }
-      if (isBot) row.appendChild(slot);
 
       const hasImages = Array.isArray(m.images) && m.images.length > 0;
       const isMediaOnly = !m.text && hasImages;
@@ -873,7 +895,6 @@
         div.appendChild(grid);
       }
       row.appendChild(div);
-      if (!isBot) row.appendChild(slot);
       container.appendChild(row);
       container.scrollTop = container.scrollHeight;
     }
@@ -912,8 +933,26 @@
     }
 
     hideTyping() {
+      this.cancelTypingTimer();
       const typing = this.shadow.getElementById("cw-typing");
       if (typing) typing.remove();
+    }
+
+    // Delays the "..." thinking bubble so a fast reply never flashes it on
+    // screen - only shows once the bot has stayed quiet for `delayMs`.
+    scheduleTyping(delayMs = 2000, label) {
+      this.cancelTypingTimer();
+      this.typingTimer = setTimeout(() => {
+        this.typingTimer = null;
+        this.showTyping(label);
+      }, delayMs);
+    }
+
+    cancelTypingTimer() {
+      if (this.typingTimer) {
+        clearTimeout(this.typingTimer);
+        this.typingTimer = null;
+      }
     }
 
     isImageUrl(v) {
@@ -1033,10 +1072,14 @@
       );
 
       if (valid.length !== fileList.length) {
-        this.appendBubble({
-          sender: "bot",
-          text: "Only image files are supported (jpeg, png, webp, gif, avif, heic).",
-        });
+        this.appendBubble(
+          {
+            sender: "bot",
+            text: "Only image files are supported (jpeg, png, webp, gif, avif, heic).",
+          },
+          null,
+          { animate: true },
+        );
       }
 
       for (const file of valid) {
@@ -1127,6 +1170,17 @@
       const attachments = this.pendingAttachments.slice();
       if (!text && !attachments.length) return;
 
+      // Only true for the one turn where the customer's typed text is being
+      // adopted as their name - lets the backend tell this apart from a
+      // real query so it doesn't treat the name as a product search term.
+      const isNameCapture = !this.userName && !!text;
+      if (isNameCapture) {
+        this.userName = text;
+        try {
+          localStorage.setItem(NAME_KEY, this.userName);
+        } catch (e) {}
+      }
+
       input.value = "";
       input.style.height = "auto";
       this.clearPendingAttachments();
@@ -1136,7 +1190,10 @@
         if (attachments.length) {
           await this.sendImagesWithCaption(attachments, text);
         } else {
-          await this.deliverMessage({ text }, { sender: "user", text });
+          await this.deliverMessage(
+            { text, ...(isNameCapture ? { name_capture: true } : {}) },
+            { sender: "user", text },
+          );
         }
       } finally {
         this.isSending = false;
@@ -1145,7 +1202,11 @@
 
     async sendImagesWithCaption(attachments, caption) {
       const previewUrls = attachments.map((a) => a.previewUrl);
-      this.appendBubble({ sender: "user", text: caption, images: previewUrls });
+      this.appendBubble(
+        { sender: "user", text: caption, images: previewUrls },
+        null,
+        { animate: true },
+      );
       this.showTyping(
         attachments.length > 1
           ? `Uploading ${attachments.length} images...`
@@ -1172,10 +1233,14 @@
       } catch (err) {
         console.error("[ChatWidget] image upload error:", err);
         this.hideTyping();
-        this.appendBubble({
-          sender: "bot",
-          text: "Sorry, the image(s) failed to upload.",
-        });
+        this.appendBubble(
+          {
+            sender: "bot",
+            text: "Sorry, the image(s) failed to upload.",
+          },
+          null,
+          { animate: true },
+        );
       } finally {
         attachments.forEach((a) => {
           if (a.kind === "file") URL.revokeObjectURL(a.previewUrl);
@@ -1211,6 +1276,7 @@
 
         const url = new URL(API.IMAGE_STATUS);
         url.searchParams.set("imageId", imageId);
+        url.searchParams.set("companyId", this.config.companyId);
         const res = await fetch(url);
         if (!res.ok) continue;
 
@@ -1224,22 +1290,27 @@
     }
 
     async deliverMessage(messageFields, optimisticBubble) {
-      if (optimisticBubble) this.appendBubble(optimisticBubble);
-      this.showTyping();
+      if (optimisticBubble) {
+        this.appendBubble(optimisticBubble, null, { animate: true });
+      }
+      this.scheduleTyping();
 
       const messageId = this.generateMid();
       const now = Date.now();
 
       const payload = {
-        object: "chatbot",
-        channel: "chatbot",
+        object: "widget",
+        channel: "widget",
         entry: [
           {
             id: this.config.companyId,
             time: now,
             messaging: [
               {
-                sender: { id: this.sessionId },
+                sender: {
+                  id: this.sessionId,
+                  ...(this.userName ? { name: this.userName } : {}),
+                },
                 recipient: { id: this.config.companyId },
                 timestamp: now,
                 message: { mid: messageId, ...messageFields },
@@ -1266,10 +1337,14 @@
       } catch (err) {
         console.error("[ChatWidget] send error:", err);
         this.hideTyping();
-        this.appendBubble({
-          sender: "bot",
-          text: "Sorry, I'm having trouble connecting.",
-        });
+        this.appendBubble(
+          {
+            sender: "bot",
+            text: "Sorry, I'm having trouble connecting.",
+          },
+          null,
+          { animate: true },
+        );
       }
     }
 
