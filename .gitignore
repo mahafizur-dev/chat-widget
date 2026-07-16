@@ -1,0 +1,19 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Dependencies (if a package.json is ever added)
+node_modules/
+n8n-workflows/
+
+# Environment / secrets
+.env
+.env.*
+.claude
+
+# Logs
+*.log
+npm-debug.log*
