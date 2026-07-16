@@ -2,29 +2,33 @@
   "nodes": [
     {
       "parameters": {
-        "httpMethod": "POST",
-        "path": "api/v1/upload-image-chatbot",
+        "path": "api/v1/get-data-chatbot",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {
+          "allowedOrigins": "*"
+        }
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        0,
-        0
+        80,
+        176
       ],
-      "id": "16d590dc-1653-4adf-a03c-0f34ee0d5281",
+      "id": "d8aa3199-8543-4698-99c8-3213782721f3",
       "name": "Webhook",
-      "webhookId": "03696130-eef9-4602-90e3-f7315b4ef711"
+      "webhookId": "9af4feea-7f00-4267-ae67-3f99e5e7928b"
     },
     {
       "parameters": {
-        "jsCode": "// Pull the browser-set Origin (falls back to parsing Referer's origin -\n// never the raw Referer, which can include a path/query).\nconst headers = $json.headers || {};\nlet origin = headers.origin || '';\nif (!origin && headers.referer) {\n  try { origin = new URL(headers.referer).origin; } catch (e) { origin = ''; }\n}\n\nconst body = $json.body || {};\nconst companyId = body.company_id || '';\n\n// company_id is a uuid column in Postgres - reject non-uuid values here so\n// a malformed companyId fails closed instead of throwing a cast error in\n// the Lookup Domain query.\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst validRequest = Boolean(origin) && UUID_RE.test(companyId);\n\nreturn [{ json: { ...$json, origin, companyId, validRequest } }];"
+        "jsCode": "// Pull the browser-set Origin (falls back to parsing Referer's origin -\n// never the raw Referer, which can include a path/query).\nconst headers = $json.headers || {};\nlet origin = headers.origin || '';\nif (!origin && headers.referer) {\n  try { origin = new URL(headers.referer).origin; } catch (e) { origin = ''; }\n}\n\nconst query = $json.query || {};\nconst companyId = query.companyId || query.company_id || '';\n\n// company_id is a uuid column in Postgres - reject non-uuid values here so\n// a malformed companyId fails closed instead of throwing a cast error in\n// the Lookup Domain query.\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst validRequest = Boolean(origin) && UUID_RE.test(companyId);\n\nreturn [{ json: { ...$json, origin, companyId, validRequest } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [110, 0],
-      "id": "b2c3d4e5-1111-4a1b-9c2d-3e4f5a6b7c8d",
+      "position": [
+        260,
+        176
+      ],
+      "id": "e1a2b3c4-1111-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Extract Origin & Company"
     },
     {
@@ -53,8 +57,11 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [220, 0],
-      "id": "b2c3d4e5-4444-4a1b-9c2d-3e4f5a6b7c8d",
+      "position": [
+        460,
+        176
+      ],
+      "id": "e1a2b3c4-2222-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Request Valid?"
     },
     {
@@ -66,9 +73,12 @@
         }
       },
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [330, 0],
-      "id": "b2c3d4e5-5555-4a1b-9c2d-3e4f5a6b7c8d",
+      "typeVersion": 2.6,
+      "position": [
+        660,
+        176
+      ],
+      "id": "e1a2b3c4-3333-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Lookup Domain",
       "credentials": {
         "postgres": {
@@ -103,8 +113,11 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [440, 0],
-      "id": "b2c3d4e5-2222-4a1b-9c2d-3e4f5a6b7c8d",
+      "position": [
+        860,
+        176
+      ],
+      "id": "e1a2b3c4-4444-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Origin Allowed?"
     },
     {
@@ -117,83 +130,49 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [330, 220],
-      "id": "b2c3d4e5-3333-4a1b-9c2d-3e4f5a6b7c8d",
+      "position": [
+        660,
+        400
+      ],
+      "id": "e1a2b3c4-5555-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Respond Forbidden"
     },
     {
       "parameters": {
-        "jsCode": "// The Postgres lookup and the IF nodes upstream don't carry the\n// uploaded file's binary data forward with them - pull it back from the\n// Webhook node directly so 'Upload To Image Host' has 'file' to send.\nreturn [{ json: $json, binary: $('Webhook').item.binary }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [495, 0],
-      "id": "b2c3d4e5-6666-4a1b-9c2d-3e4f5a6b7c8d",
-      "name": "Reattach File"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://img.presswayy.com/api/upload",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-uploader",
-              "value": "ChatWidget"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "file",
-              "parameterType": "formBinaryData",
-              "inputDataFieldName": "file"
-            },
-            {
-              "name": "company_id",
-              "value": "={{ $('Extract Origin & Company').item.json.companyId }}"
-            }
-          ]
-        },
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM presswayy.messages\nWHERE company_id = $1\nAND sender_external_id = $2\nAND COALESCE(status, '') != 'deleted'\nORDER BY created_at ASC;",
         "options": {
-          "response": {
-            "response": {
-              "fullResponse": true,
-              "neverError": true
-            }
-          }
+          "queryReplacement": "={{ $('Webhook').item.json.query.company_id }},{{ $('Webhook').item.json.query.session_id }}"
         }
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
-        660,
-        0
+        1060,
+        176
       ],
-      "id": "2a9f6d31-6c3e-4f2a-9e3b-8b1a4c2f7d10",
-      "name": "Upload To Image Host"
+      "id": "a4d4bffb-9d42-48c2-822d-f6fcef54c52d",
+      "name": "get-chat-messages",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "AZJCysUe0k1FzOUH",
+          "name": "Main PostGres DB"
+        }
+      }
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json.body }}",
-        "options": {
-          "responseCode": "={{ $json.statusCode }}"
-        }
+        "respondWith": "allIncomingItems",
+        "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
+      "typeVersion": 1.5,
       "position": [
-        880,
-        0
+        1280,
+        176
       ],
-      "id": "8c1e2f4a-5b6d-47c8-9a0e-1f2b3c4d5e6f",
+      "id": "7e4eff4a-ac93-4be3-a9e7-25077258ba59",
       "name": "Respond to Webhook"
     }
   ],
@@ -253,7 +232,7 @@
       "main": [
         [
           {
-            "node": "Reattach File",
+            "node": "get-chat-messages",
             "type": "main",
             "index": 0
           }
@@ -267,18 +246,7 @@
         ]
       ]
     },
-    "Reattach File": {
-      "main": [
-        [
-          {
-            "node": "Upload To Image Host",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Upload To Image Host": {
+    "get-chat-messages": {
       "main": [
         [
           {
@@ -290,8 +258,49 @@
       ]
     }
   },
-  "pinData": {},
+  "pinData": {
+    "Webhook": [
+      {
+        "headers": {
+          "host": "server.presswayy.com",
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+          "accept": "*/*",
+          "accept-encoding": "gzip, br",
+          "accept-language": "en-US,en;q=0.9",
+          "cdn-loop": "cloudflare; loops=1",
+          "cf-connecting-ip": "118.179.206.186",
+          "cf-ipcountry": "BD",
+          "cf-ray": "a0cf057c3966a472-SIN",
+          "cf-visitor": "{\"scheme\":\"https\"}",
+          "origin": "http://localhost:3000",
+          "priority": "u=1, i",
+          "referer": "http://localhost:3000/",
+          "sec-ch-ua": "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Windows\"",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-site": "cross-site",
+          "via": "2.0 Caddy",
+          "x-forwarded-for": "172.70.92.147",
+          "x-forwarded-host": "server.presswayy.com",
+          "x-forwarded-proto": "https"
+        },
+        "params": {},
+        "query": {
+          "companyId": "f1767d60-ac8c-485a-b89a-ab739cf48f5f",
+          "sessionId": "5a7dd21c-faf0-4372-ba9c-c05ade736161",
+          "company_id": "f1767d60-ac8c-485a-b89a-ab739cf48f5f",
+          "session_id": "5a7dd21c-faf0-4372-ba9c-c05ade736161"
+        },
+        "body": {},
+        "webhookUrl": "https://server.presswayy.com/webhook/api/v1/get-data-chatbot",
+        "executionMode": "production"
+      }
+    ]
+  },
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "111085847a4351d864bca111e412403fd83d3b208d76226fcffbefb26a951863"
   }
 }

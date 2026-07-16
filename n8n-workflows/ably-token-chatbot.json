@@ -16,13 +16,13 @@
     },
     {
       "parameters": {
-        "jsCode": "// Not secret - a public domain allowlist, safe to hardcode here.\n// EDIT ME: add every real domain this widget is embedded on.\nconst allowed = [\n  'https://presswayy.com',\n  'https://www.presswayy.com',\n];\n\nconst headers = $json.headers || {};\nconst origin = headers.origin || headers.referer || '';\nconst originAllowed =\n  allowed.length > 0 &&\n  allowed.some((a) => origin === a || origin.indexOf(a + '/') === 0);\n\nreturn [{ json: { ...$json, origin, originAllowed } }];"
+        "jsCode": "// Pull the browser-set Origin (falls back to parsing Referer's origin -\n// never the raw Referer, which can include a path/query).\nconst headers = $json.headers || {};\nlet origin = headers.origin || '';\nif (!origin && headers.referer) {\n  try { origin = new URL(headers.referer).origin; } catch (e) { origin = ''; }\n}\n\nconst body = $json.body || {};\nconst companyId = body.companyId || '';\nconst sessionId = body.sessionId || '';\n\n// company_id is a uuid column in Postgres - reject non-uuid values here so\n// a malformed companyId fails closed instead of throwing a cast error in\n// the Lookup Domain query.\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst validRequest = Boolean(origin) && UUID_RE.test(companyId);\n\nreturn [{ json: { ...$json, origin, companyId, sessionId, validRequest } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [220, 0],
       "id": "a1b2c3d4-0002-4a1b-9c2d-3e4f5a6b7c8d",
-      "name": "Check Origin"
+      "name": "Extract Origin & Company"
     },
     {
       "parameters": {
@@ -34,8 +34,8 @@
           },
           "conditions": [
             {
-              "id": "origin-allowed-cond",
-              "leftValue": "={{ $json.originAllowed }}",
+              "id": "request-valid-cond",
+              "leftValue": "={{ $json.validRequest }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -51,6 +51,56 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [440, 0],
+      "id": "a1b2c3d4-0010-4a1b-9c2d-3e4f5a6b7c8d",
+      "name": "Request Valid?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT EXISTS (\n  SELECT 1 FROM presswayy.company_domains\n  WHERE company_id = $1::uuid AND domain = $2 AND verification_status = 'verified'\n) AS allowed",
+        "options": {
+          "queryReplacement": "={{ [$json.companyId, $json.origin] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [600, 0],
+      "id": "a1b2c3d4-0011-4a1b-9c2d-3e4f5a6b7c8d",
+      "name": "Lookup Domain",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "origin-allowed-cond",
+              "leftValue": "={{ $json.allowed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [780, 0],
       "id": "a1b2c3d4-0003-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Origin Allowed?"
     },
@@ -64,17 +114,17 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [660, 180],
+      "position": [600, 220],
       "id": "a1b2c3d4-0004-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Respond Forbidden"
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body || {};\nconst companyId = body.companyId;\nconst sessionId = body.sessionId;\n\nif (!companyId || !sessionId) {\n  return [{ json: { inputValid: false, error: 'companyId and sessionId are required' } }];\n}\n\n// Must match the channel name the widget subscribes to (chat-widget.js).\nconst channel = `chat-${companyId}-${sessionId}`;\n// Least privilege: the browser only ever subscribes, so the minted token\n// never carries publish/presence/history capability.\nconst capability = JSON.stringify({ [channel]: ['subscribe'] });\n\n// keyName (appId.keyId) is the public half of the Ably key - not a secret.\n// EDIT ME: paste the part of your Ably root key BEFORE the colon.\n// The secret half (after the colon) lives only in the \"Ably Root Key\"\n// HTTP Basic Auth credential attached to the Request Ably Token node below.\nconst keyName = 'REPLACE_WITH_YOUR_ABLY_KEY_NAME';\n\nreturn [{\n  json: { inputValid: true, channel, capability, clientId: sessionId, keyName },\n}];"
+        "jsCode": "const src = $('Extract Origin & Company').item.json;\nconst companyId = src.companyId;\nconst sessionId = src.sessionId;\n\nif (!companyId || !sessionId) {\n  return [{ json: { inputValid: false, error: 'companyId and sessionId are required' } }];\n}\n\n// Must match the channel name the widget subscribes to (chat-widget.js).\nconst channel = `chat-${companyId}-${sessionId}`;\n// Least privilege: the browser only ever subscribes, so the minted token\n// never carries publish/presence/history capability.\nconst capability = JSON.stringify({ [channel]: ['subscribe'] });\n\n// keyName (appId.keyId) is the public half of the Ably key - not a secret.\n// EDIT ME: paste the part of your Ably root key BEFORE the colon.\n// The secret half (after the colon) lives only in the \"Ably Root Key\"\n// HTTP Basic Auth credential attached to the Request Ably Token node below.\nconst keyName = 'REPLACE_WITH_YOUR_ABLY_KEY_NAME';\n\nreturn [{\n  json: { inputValid: true, channel, capability, clientId: sessionId, keyName },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 0],
+      "position": [1000, 0],
       "id": "a1b2c3d4-0005-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Build Token Request"
     },
@@ -104,7 +154,7 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [880, 0],
+      "position": [1220, 0],
       "id": "a1b2c3d4-0006-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Input Valid?"
     },
@@ -118,7 +168,7 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1100, 180],
+      "position": [1440, 180],
       "id": "a1b2c3d4-0007-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Respond Bad Request"
     },
@@ -151,7 +201,7 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 0],
+      "position": [1440, 0],
       "id": "a1b2c3d4-0008-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Request Ably Token"
     },
@@ -165,16 +215,25 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1320, 0],
+      "position": [1660, 0],
       "id": "a1b2c3d4-0009-4a1b-9c2d-3e4f5a6b7c8d",
       "name": "Respond to Webhook"
     }
   ],
   "connections": {
     "Webhook": {
-      "main": [[{ "node": "Check Origin", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Extract Origin & Company", "type": "main", "index": 0 }]]
     },
-    "Check Origin": {
+    "Extract Origin & Company": {
+      "main": [[{ "node": "Request Valid?", "type": "main", "index": 0 }]]
+    },
+    "Request Valid?": {
+      "main": [
+        [{ "node": "Lookup Domain", "type": "main", "index": 0 }],
+        [{ "node": "Respond Forbidden", "type": "main", "index": 0 }]
+      ]
+    },
+    "Lookup Domain": {
       "main": [[{ "node": "Origin Allowed?", "type": "main", "index": 0 }]]
     },
     "Origin Allowed?": {
